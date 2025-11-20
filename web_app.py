@@ -1,7 +1,7 @@
 import streamlit as st
 import numpy as np
 import cv2
-from PIL import Image, ImageEnhance, ImageDraw, ImageFont
+from PIL import Image, ImageEnhance, ImageDraw
 import io
 from rembg import remove
 
@@ -20,14 +20,15 @@ st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # --- 侧边栏导航 ---
 st.sidebar.title("🎨 马尊影像工坊")
-app_mode = st.sidebar.selectbox("选择功能模块", [
+st.sidebar.markdown("### 🎯 功能导航")
+app_mode = st.sidebar.radio("", [
     "✨ 智能美颜 (Beauty)",
     "🪄 AI 智能抠图 (Remove BG)",
     "🆔 证件照换底 (ID Photo)",
     "🎨 艺术滤镜 (Filters)",
     "📉 格式/压缩 (Converter)",
     "💧 水印管家 (Watermark)"
-])
+], label_visibility="collapsed")
 
 # --- 公共函数 ---
 def convert_image(img):
@@ -82,7 +83,7 @@ def app_id_photo():
     uploaded_file = st.file_uploader("上传人像照片", type=['jpg', 'png'])
     if uploaded_file:
         image = Image.open(uploaded_file)
-        color = st.radio("选择底色", ["⚪ 白色", "🔴 红色", "� 蓝色"])
+        color = st.radio("选择底色", ["⚪ 白色", "🔴 红色", "🔵 蓝色"])
         
         if st.button("生成证件照"):
             with st.spinner("正在处理..."):
@@ -99,7 +100,7 @@ def app_filters():
     uploaded_file = st.file_uploader("上传图片", type=['jpg', 'png'])
     if uploaded_file:
         image = Image.open(uploaded_file)
-        option = st.selectbox("选择滤镜", ["� 素描 (Sketch)", "🎞️ 黑白 (Grayscale)", "🌆 怀旧 (Sepia)"])
+        option = st.selectbox("选择滤镜", ["📝 素描 (Sketch)", "🎞️ 黑白 (Grayscale)", "🌆 怀旧 (Sepia)"])
         
         img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         
@@ -140,21 +141,32 @@ def app_converter():
             
             st.download_button(f"⬇️ 下载 {to_format}", buf.getvalue(), f"new_image.{to_format.lower()}")
 
-# --- 模块 6: 水印管家 ---
+# --- 模块 6: 水印管家 (修复版) ---
 def app_watermark():
     st.title("💧 图片加水印")
     uploaded_file = st.file_uploader("上传图片", type=['jpg', 'png'])
     if uploaded_file:
-        image = Image.open(uploaded_file).convert("RGBA")
+        # 先转换为RGB，再转为RGBA
+        image = Image.open(uploaded_file)
+        if image.mode != 'RGBA':
+            image = image.convert('RGB').convert('RGBA')
+        
         text = st.text_input("水印文字", "马尊出品")
         opacity = st.slider("透明度", 0, 255, 128)
+        font_size = st.slider("字体大小", 10, 100, 40)
         
         if st.button("添加水印"):
+            # 创建文字图层
             txt_layer = Image.new("RGBA", image.size, (255, 255, 255, 0))
             draw = ImageDraw.Draw(txt_layer)
-            # 简单处理：文字印在右下角
+            
+            # 计算文字位置（右下角）
             w, h = image.size
-            draw.text((w-150, h-50), text, fill=(255, 255, 255, opacity))
+            # 使用默认字体，简单绘制
+            position = (w - len(text) * font_size - 20, h - font_size - 20)
+            draw.text(position, text, fill=(255, 255, 255, opacity))
+            
+            # 合成图像
             out = Image.alpha_composite(image, txt_layer)
             st.image(out, caption="水印效果", use_column_width=True)
             st.download_button("⬇️ 下载", convert_image(out), "watermark.png", "image/png")
@@ -170,5 +182,5 @@ elif app_mode == "🎨 艺术滤镜 (Filters)":
     app_filters()
 elif app_mode == "📉 格式/压缩 (Converter)":
     app_converter()
-elif app_mode == "� 水印管家 (Watermark)":
+elif app_mode == "💧 水印管家 (Watermark)":
     app_watermark()
