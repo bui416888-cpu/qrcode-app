@@ -1,324 +1,115 @@
 import streamlit as st
-import cv2
 import numpy as np
+import cv2
 from PIL import Image
 import io
 
-# 设置页面配置 - 必须是第一个 Streamlit 命令
-st.set_page_config(
-    page_title="Magic Studio - 马尊图像魔术师",
-    page_icon="🔮",
-    layout="wide",
-    initial_sidebar_state="expanded"
+# --- 隐藏默认菜单的 CSS ---
+hide_st_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_st_style, unsafe_allow_html=True)
+
+# --- 标题与布局 ---
+st.title("🎨 Magic Studio | 马尊图像魔术师")
+st.markdown("---")
+
+# --- 侧边栏：控制台 ---
+st.sidebar.header("🎛️ 控制台")
+
+# 1. 图片上传
+uploaded_file = st.sidebar.file_uploader("上传图片 (JPG/PNG)", type=['jpg', 'png', 'jpeg'])
+
+# 2. 滤镜选择
+filter_type = st.sidebar.radio(
+    "✨ 选择魔法滤镜",
+    ("🔴 原图", "📝 素描大师 (Sketch)", "🤖 赛博朋克 (Cyberpunk)", "🕶️ 模糊隐私 (Blur)", "✨ 智能美颜 (Pro Beauty)")
 )
 
-# 自定义 CSS 以实现科技感/赛博朋克风格
-st.markdown("""
-    <style>
-    /* 全局背景和字体 */
-    .stApp {
-        background-color: #0e1117;
-        color: #fafafa;
-        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    }
-    
-    /* 侧边栏样式 */
-    section[data-testid="stSidebar"] {
-        background-color: #161b22;
-        border-right: 1px solid #30363d;
-    }
-    
-    /* 标题样式 */
-    h1, h2, h3 {
-        color: #00e5ff !important;
-        text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
-        font-weight: 700;
-    }
-    
-    /* 按钮样式 */
-    .stButton>button {
-        background: linear-gradient(45deg, #2196F3, #00BCD4);
-        color: white;
-        border: none;
-        border-radius: 5px;
-        box-shadow: 0 4px 15px rgba(0, 188, 212, 0.4);
-        transition: all 0.3s ease;
-        font-weight: bold;
-    }
-    .stButton>button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 6px 20px rgba(0, 188, 212, 0.6);
-    }
-    
-    /* 文件上传组件 */
-    .stFileUploader {
-        border: 1px dashed #00e5ff;
-        border-radius: 10px;
-        padding: 20px;
-        background-color: rgba(0, 229, 255, 0.05);
-    }
-    
-    /* 图片容器 */
-    .image-container {
-        border: 2px solid #30363d;
-        border-radius: 10px;
-        padding: 10px;
-        background-color: #0d1117;
-        box-shadow: 0 0 20px rgba(0,0,0,0.5);
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# --- 核心处理逻辑 ---
+def process_image(image_input, filter_mode):
+    # 将 PIL 图片转换为 OpenCV 格式 (RGB -> BGR)
+    img_array = np.array(image_input.convert('RGB'))
+    img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
 
-def sketch_filter(img_array):
-    """素描大师滤镜"""
-    gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-    invert_img = cv2.bitwise_not(gray_img)
-    blur_img = cv2.GaussianBlur(invert_img, (21, 21), 0)
-    inverted_blur = cv2.bitwise_not(blur_img)
-    sketch_img = cv2.divide(gray_img, inverted_blur, scale=256.0)
-    return cv2.cvtColor(sketch_img, cv2.COLOR_GRAY2RGB)
+    if filter_mode == "🔴 原图":
+        return img_cv
 
-def cyberpunk_filter(img_array):
-    """赛博朋克滤镜"""
-    # 增强对比度 (CLAHE)
-    lab = cv2.cvtColor(img_array, cv2.COLOR_RGB2LAB)
-    l, a, b = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    cl = clahe.apply(l)
-    limg = cv2.merge((cl, a, b))
-    enhanced_img = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
-    
-    # 增加饱和度和色调偏移 (简单的赛博朋克模拟)
-    hsv = cv2.cvtColor(enhanced_img, cv2.COLOR_RGB2HSV)
-    h, s, v = cv2.split(hsv)
-    s = cv2.add(s, 50) # 增加饱和度
-    v = cv2.add(v, 20) # 增加亮度
-    final_hsv = cv2.merge((h, s, v))
-    final_img = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2RGB)
-    
-    return final_img
+    elif filter_mode == "📝 素描大师 (Sketch)":
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        inv_gray = 255 - gray
+        blur = cv2.GaussianBlur(inv_gray, (21, 21), 0)
+        sketch = cv2.divide(gray, 255 - blur, scale=256.0)
+        return cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
 
-def blur_filter(img_array, ksize):
-import streamlit as st
-import cv2
-import numpy as np
-from PIL import Image
-import io
+    elif filter_mode == "🤖 赛博朋克 (Cyberpunk)":
+        # 增加对比度并检测边缘
+        contrast = cv2.convertScaleAbs(img_cv, alpha=1.5, beta=10)
+        edges = cv2.Canny(contrast, 100, 200)
+        edges_color = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+        # 将边缘叠加成霓虹色
+        edges_color[:, :, 1] = 0 # 去掉绿色，变成紫红色调
+        final = cv2.addWeighted(contrast, 0.8, edges_color, 0.4, 0)
+        return final
 
-# 设置页面配置 - 必须是第一个 Streamlit 命令
-st.set_page_config(
-    page_title="Magic Studio - 马尊图像魔术师",
-    page_icon="🔮",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+    elif filter_mode == "🕶️ 模糊隐私 (Blur)":
+        # 获取滑块参数
+        blur_amount = st.sidebar.slider("调节模糊程度", 1, 100, 25)
+        # 确保是奇数
+        k_size = blur_amount if blur_amount % 2 == 1 else blur_amount + 1
+        return cv2.GaussianBlur(img_cv, (k_size, k_size), 0)
 
-# 自定义 CSS 以实现科技感/赛博朋克风格
-st.markdown("""
-    <style>
-    /* 全局背景和字体 */
-    .stApp {
-        background-color: #0e1117;
-        color: #fafafa;
-        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    }
-    
-    /* 侧边栏样式 */
-    section[data-testid="stSidebar"] {
-        background-color: #161b22;
-        border-right: 1px solid #30363d;
-    }
-    
-    /* 标题样式 */
-    h1, h2, h3 {
-        color: #00e5ff !important;
-        text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
-        font-weight: 700;
-    }
-    
-    /* 按钮样式 */
-    .stButton>button {
-        background: linear-gradient(45deg, #2196F3, #00BCD4);
-        color: white;
-        border: none;
-        border-radius: 5px;
-        box-shadow: 0 4px 15px rgba(0, 188, 212, 0.4);
-        transition: all 0.3s ease;
-        font-weight: bold;
-    }
-    .stButton>button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 6px 20px rgba(0, 188, 212, 0.6);
-    }
-    
-    /* 文件上传组件 */
-    .stFileUploader {
-        border: 1px dashed #00e5ff;
-        border-radius: 10px;
-        padding: 20px;
-        background-color: rgba(0, 229, 255, 0.05);
-    }
-    
-    /* 图片容器 */
-    .image-container {
-        border: 2px solid #30363d;
-        border-radius: 10px;
-        padding: 10px;
-        background-color: #0d1117;
-        box-shadow: 0 0 20px rgba(0,0,0,0.5);
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-def sketch_filter(img_array):
-    """素描大师滤镜"""
-    gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-    invert_img = cv2.bitwise_not(gray_img)
-    blur_img = cv2.GaussianBlur(invert_img, (21, 21), 0)
-    inverted_blur = cv2.bitwise_not(blur_img)
-    sketch_img = cv2.divide(gray_img, inverted_blur, scale=256.0)
-    return cv2.cvtColor(sketch_img, cv2.COLOR_GRAY2RGB)
-
-def cyberpunk_filter(img_array):
-    """赛博朋克滤镜"""
-    # 增强对比度 (CLAHE)
-    lab = cv2.cvtColor(img_array, cv2.COLOR_RGB2LAB)
-    l, a, b = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    cl = clahe.apply(l)
-    limg = cv2.merge((cl, a, b))
-    enhanced_img = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
-    
-    # 增加饱和度和色调偏移 (简单的赛博朋克模拟)
-    hsv = cv2.cvtColor(enhanced_img, cv2.COLOR_RGB2HSV)
-    h, s, v = cv2.split(hsv)
-    s = cv2.add(s, 50) # 增加饱和度
-    v = cv2.add(v, 20) # 增加亮度
-    final_hsv = cv2.merge((h, s, v))
-    final_img = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2RGB)
-    
-    return final_img
-
-def blur_filter(img_array, ksize):
-    """模糊隐私滤镜"""
-    # 确保核大小是奇数
-    if ksize % 2 == 0:
-        ksize += 1
-    return cv2.GaussianBlur(img_array, (ksize, ksize), 0)
-
-def pro_beauty_filter(img_array, dermabrasion, whitening):
-    """专业智能美颜滤镜"""
-    # 1. 磨皮 (Dermabrasion) - 双边滤波
-    # d: 像素邻域直径, sigmaColor: 颜色空间标准差, sigmaSpace: 坐标空间标准差
-    # 磨皮程度越高，sigmaColor 和 sigmaSpace 越大
-    d = 9
-    sigma_color = dermabrasion * 1.5  # 0-150
-    sigma_space = dermabrasion * 1.5  # 0-150
-    
-    # 转换为 RGB (OpenCV 默认 BGR，但这里 img_array 是 RGB)
-    # 双边滤波对 RGB 图像有效
-    smooth_img = cv2.bilateralFilter(img_array, d, sigma_color, sigma_space)
-    
-    # 2. 美白 (Whitening) - 调整亮度和对比度
-    # alpha: 对比度 (1.0 - 1.5), beta: 亮度 (0 - 50)
-    alpha = 1.0 + (whitening / 200.0) # 1.0 ~ 1.5
-    beta = whitening / 2.0            # 0 ~ 50
-    
-    whitened_img = cv2.convertScaleAbs(smooth_img, alpha=alpha, beta=beta)
-    
-    return whitened_img
-
-def main():
-    st.title("🔮 Magic Studio | 马尊图像魔术师")
-    st.markdown("---")
-
-    # --- 侧边栏：控制台 ---
-    with st.sidebar:
-        st.header("🎛️ 控制台")
+    elif filter_mode == "✨ 智能美颜 (Pro Beauty)":
+        # 获取美颜参数
+        smooth_level = st.sidebar.slider("🧴 磨皮程度", 0, 50, 15)
+        white_level = st.sidebar.slider("💡 美白程度", 0, 50, 10)
         
-        # 功能 1: 图片上传
-        uploaded_file = st.file_uploader("上传图片 (JPG/PNG)", type=['jpg', 'jpeg', 'png'])
+        # 1. 双边滤波磨皮 (保边去噪)
+        # d: 邻域直径, sigmaColor: 颜色空间标准差, sigmaSpace: 坐标空间标准差
+        img_smooth = cv2.bilateralFilter(img_cv, d=9, sigmaColor=smooth_level*2+10, sigmaSpace=75)
         
-        filter_type = "原图"
-        blur_amount = 0
-        beauty_dermabrasion = 0
-        beauty_whitening = 0
+        # 2. 美白 (调整亮度/对比度)
+        # alpha: 对比度 (1.0-3.0), beta: 亮度 (0-100)
+        img_beauty = cv2.convertScaleAbs(img_smooth, alpha=1.0 + white_level/200.0, beta=white_level)
         
-        if uploaded_file is not None:
-            st.success("图片上传成功！")
-            
-            # 功能 2: 选滤镜
-            st.subheader("🎨 选择魔法滤镜")
-            filter_type = st.radio(
-                "滤镜效果",
-                ("原图", "✨ 智能美颜 (Pro Beauty)", "素描大师 (Sketch)", "赛博朋克 (Cyberpunk)", "模糊隐私 (Blur)")
-            )
-            
-            if filter_type == "模糊隐私 (Blur)":
-                blur_amount = st.slider("调节模糊程度", min_value=1, max_value=100, value=25, step=2)
-            
-            if filter_type == "✨ 智能美颜 (Pro Beauty)":
-                st.markdown("#### 💆‍♀️ 美颜参数调节")
-                beauty_dermabrasion = st.slider("磨皮程度 (Dermabrasion)", 0, 100, 50)
-                beauty_whitening = st.slider("美白程度 (Whitening)", 0, 100, 30)
+        return img_beauty
 
-    # --- 主界面：实时画布 ---
-    if uploaded_file is not None:
-        # 读取图片
-        image = Image.open(uploaded_file)
-        img_array = np.array(image)
-        
-        # 处理图片
-        processed_img_array = img_array.copy()
-        
-        if filter_type == "素描大师 (Sketch)":
-            processed_img_array = sketch_filter(img_array)
-        elif filter_type == "赛博朋克 (Cyberpunk)":
-            processed_img_array = cyberpunk_filter(img_array)
-        elif filter_type == "模糊隐私 (Blur)":
-            processed_img_array = blur_filter(img_array, blur_amount)
-        elif filter_type == "✨ 智能美颜 (Pro Beauty)":
-            processed_img_array = pro_beauty_filter(img_array, beauty_dermabrasion, beauty_whitening)
-            
-        processed_image = Image.fromarray(processed_img_array)
+    return img_cv
 
-        # 功能 3: 对比模式
-        st.subheader("👁️ 实时预览")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**原始图像**")
-            st.image(image, use_column_width=True, caption="Original")
-            
-        with col2:
-            st.markdown(f"**魔法效果: {filter_type}**")
-            st.image(processed_image, use_column_width=True, caption="Magic Result")
+# --- 主界面显示 ---
+if uploaded_file is not None:
+    # 打开图片
+    image = Image.open(uploaded_file)
+    
+    # 处理图片
+    result_cv = process_image(image, filter_type)
+    
+    # 将 OpenCV 格式转回 PIL 格式用于显示
+    result_pil = Image.fromarray(cv2.cvtColor(result_cv, cv2.COLOR_BGR2RGB))
 
-        # 功能 4: 一键下载
-        st.markdown("---")
-        buf = io.BytesIO()
-        # 根据原图格式保存，默认 PNG
-        format_to_save = image.format if image.format else 'PNG'
-        processed_image.save(buf, format=format_to_save)
-        byte_im = buf.getvalue()
-        
-        st.download_button(
-            label="⬇️ 下载魔法图片",
-            data=byte_im,
-            file_name=f"magic_studio_{filter_type}.{format_to_save.lower()}",
-            mime=f"image/{format_to_save.lower()}"
-        )
-        
-    else:
-        # 欢迎界面
-        st.info("👈 请在左侧控制台上传图片开始魔法之旅")
-        st.markdown("""
-        ### ✨ 功能介绍
-        - **✨ 智能美颜**: 专业级磨皮美白，打造完美肌肤
-        - **素描大师**: 一键生成艺术素描
-        - **赛博朋克**: 赋予照片未来科技感
-        - **模糊隐私**: 智能保护敏感信息
-        """)
+    # 分列显示：左边原图，右边效果图
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("原始图像")
+        st.image(image, use_column_width=True)
+    with col2:
+        st.subheader(f"魔法效果: {filter_type}")
+        st.image(result_pil, use_column_width=True)
 
-if __name__ == "__main__":
-    main()
+    # 下载按钮
+    buf = io.BytesIO()
+    result_pil.save(buf, format="PNG")
+    byte_im = buf.getvalue()
+    st.download_button(
+        label="⬇️ 下载魔法图片",
+        data=byte_im,
+        file_name="magic_result.png",
+        mime="image/png"
+    )
+
+else:
+    st.info("👈 请在左侧上传一张照片开始体验魔法！")
